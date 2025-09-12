@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MetaMask Connect Example</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+  <h2>🔗 MetaMask Connection Test</h2>
+  <button id="connectBtn">Connect Wallet</button>
+  <p id="output">Not connected</p>
+
+  <script>
+    const connectBtn = document.getElementById("connectBtn");
+    const output = document.getElementById("output");
+
+    connectBtn.addEventListener("click", async () => {
+      try {
+        if (typeof window.ethereum === "undefined") {
+          alert("❌ Please install MetaMask first!");
+          return;
+        }
+
+        // Request accounts from MetaMask
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+
+        const signer = provider.getSigner();
+        const address = await signer.getAddress();
+
+        output.innerText = `✅ Connected: ${address}`;
+      } catch (err) {
+        console.error("Connection error:", err);
+        output.innerText = "❌ Connection failed. Check console.";
+      }
+    });
+  </script>
+</body>
+</html>
