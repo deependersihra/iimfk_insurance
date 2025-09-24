@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DocRegistry DApp with IPFS</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+<!-- This is a comment in HTML -->
+  <!--<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>-->
+</head>
+<body>
+  <h2>📄 Document Registry</h2>
+
+  <input type="file" id="fileInput" />
+  <input type="text" id="filename" placeholder="Enter filename" />
+  <button onclick="registerDoc()">Register Document</button>
+
+  <br><br>
+
+  <input type="text" id="hashInput" placeholder="Enter docHash to check" />
+  <button onclick="checkDoc()">Check Document</button>
+
+  <p id="output"></p>
+
+  <script>
+    // ✅ Replace this with your deployed contract address
+    const contractAddress = "0x1766209d8c33204260ea42951f079f60a193bcf8"; 
+	
+    
+    // ✅ Contract ABI
+    const abi = [
+      //"function registerDocument(bytes32 docHash, string calldata ipfsCid, string calldata filename) external",
+      "function getDocument(bytes32 docHash) external view returns (address, uint256, string memory, string memory)",
+      "function isRegistered(bytes32 docHash) external view returns (bool)"
+    ];
+
+    // ✅ Replace with your Web3.Storage API token
+    const WEB3STORAGE_TOKEN = "YOUR_WEB3STORAGE_API_KEY";
+	const NFT_STORAGE_KEY ="e09f5630.9922437dcfa04586b53a7591478116da"
+	//"9ae15e36.ec9a5dcee8da4586b587c1b23758eebd"
+	//e09f5630.9922437dcfa04586b53a7591478116da
+	
+	// OK  curl --ssl-no-revoke --location "https://preserve.nft.storage/api/v1/collection/list_collections" --header "Authorization: Bearer e09f5630.9922437dcfa04586b53a7591478116da"
+	
+	//b2e9e529.525f4cfdd5b74035a5769ee1808907b6 lihthoue key 
+
+	
+    let provider, signer, contract;
+
+    async function init() {
+      if (window.ethereum) {
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = provider.getSigner();
+        contract = new ethers.Contract(contractAddress, abi, signer);
+        document.getElementById("output").innerText = "✅ Connected to MetaMask";
+      } else {
+        alert("Please install MetaMask!");
+      }
+    }
+
+    init();
+
+    // Convert file to keccak256 hash
+    async function getFileHash(file) {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      return ethers.utils.keccak256(bytes);
+    }
+//9ae15e36.ec9a5dcee8da4586b587c1b23758eebd for 
+    // Upload file to IPFS via Web3.Storage
+    async function uploadToIPFS(file) {
+      //const endpoint = "https://api.web3.storage/upload";
+	  //const endpoint = "https://app.nft.storage/upload";
+	    const endpoint = "https://api.nft.storage/upload";
+		console.log(" Using API Key:", NFT_STORAGE_KEY);
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${NFT_STORAGE_KEY}`,
+		  "Content-Type": "application/octet-stream"
+        },
+        body: file
+      }); 
+	  //return response.json();
+	  
+	const data = await response.json();
+	return JSON.stringify(data, null, 2);
+	
+	document.getElementById("output").innerText =
+      "Full Response:\n" + JSON.stringify(data, null, 2);
+	
+	//return data.value;
+   //   if (!response.ok) {
+     //   throw new Error("Failed to upload to IPFS ");
+      //}
+
+      //const data = await response.json();
+      //return data.cid; // ✅ IPFS CID
+		//return data.value.cid // ✅ IPFS CID nft
+	}
+
+    // Register document on blockchain
+    async function registerDoc() {
+      const fileInput = document.getElementById("fileInput");
+      const file = fileInput.files[0];
+      const filename = document.getElementById("filename").value || (file ? file.name : "");
+
+      if (!file) {
+        alert("Please select a file");
+        return;
+      }
+
+      try {
+        const docHash = await getFileHash(file);
+        const ipfsCid = await uploadToIPFS(file);
+		
+        //const tx = await contract.registerDocument(docHash, ipfsCid, filename);
+        //await tx.wait();
+
+        document.getElementById("output").innerText = `✅ Document registered:
+        Hash: ${docHash}
+         CID: ${ipfsCid}
+		`;
+		 //CID: ${ipfsCid}
+      } catch (err) {
+        document.getElementById("output").innerText = "❌ Error123: " + err.message;
+      }
+    }
+
+    // Check document
+    async function checkDoc() {
+      const docHash = document.getElementById("hashInput").value;
+      try {
+        const registered = await contract.isRegistered(docHash);
+        if (!registered) {
+          document.getElementById("output").innerText = "❌ Document not found";
+          return;
+        }
+        const doc = await contract.getDocument(docHash);
+        document.getElementById("output").innerText =
+          `✅ Registered
+           Uploader: ${doc[0]}
+           Timestamp: ${new Date(doc[1] * 1000)}
+           IPFS: https://ipfs.io/ipfs/${doc[2]}
+           Filename: ${doc[3]}`;
+      } catch (err) {
+        document.getElementById("output").innerText = "❌ Error: " + err.message;
+      }
+    }
+  </script>
+</body>
+</html>

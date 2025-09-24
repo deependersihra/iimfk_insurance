@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DocRegistry DApp with IPFS + Lighthouse</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+  <h2>📄 Document Registry</h2>
+
+  <input type="file" id="fileInput" />
+  <input type="text" id="filename" placeholder="Enter filename" />
+  <br><br>
+  <button onclick="registerDoc()">Register with Sepolia Ethernet</button>
+  <button onclick="uploadLighthouse()">Upload with Lighthouse, Already registered file will give error</button>
+
+  <br><br>
+
+  <input type="text" id="hashInput" placeholder="Enter docHash to check" />
+  <button onclick="checkDoc()">Check Document</button>
+  
+  <input type="text" id="cidInput" placeholder="Enter CID">
+  <button onclick="downloadFile()">Download</button>
+
+  <pre id="output"></pre>
+  
+ <h2>Fetch IPFS File as String</h2>
+
+<input type="text" id="ipfsUrl" placeholder="Enter IPFS URL" size="60"/>
+<button onclick="fetchAndConvert()">Fetch and Convert</button>
+
+<pre id="output"></pre>
+  
+  <h2>download using URL</h2>
+  <input type="text" id="ipfsUrl" placeholder="Enter IPFS URL" />
+<button onclick="fetchAndConvert1()">Fetch & Download</button>
+  
+
+  <!-- Lighthouse SDK as module -->
+  <script type="module">
+    import lighthouse from "https://esm.sh/@lighthouse-web3/sdk@0.4.2";
+
+    // ✅ Replace with your deployed contract address
+    const contractAddress = "0xB53CDb1153049e305B60325369dc5B6593B61322"; 
+	//0x1766209d8C33204260EA42951F079f60A193bCf8
+	//0xB53CDb1153049e305B60325369dc5B6593B61322
+    
+    // ✅ Contract ABI
+    const abi = [
+	"function registerDocument(bytes32 docHash, string calldata ipfsCid, string calldata filename) external",
+      "function getDocument(bytes32 docHash) external view returns (address, uint256, string memory, string memory)",
+      "function isRegistered(bytes32 docHash) external view returns (bool)"
+    ];
+
+    // ✅ API Keys
+	const NFT_STORAGE_KEY ="e09f5630.9922437dcfa04586b53a7591478116da"   // nft.storage
+    const LIGHTHOUSE_KEY  = "b2e9e529.525f4cfdd5b74035a5769ee1808907b6";    // lighthouse.storage
+
+    //const NFT_STORAGE_KEY = "YOUR_NFT_STORAGE_KEY";
+    //const LIGHTHOUSE_KEY = "YOUR_LIGHTHOUSE_API_KEY";
+
+    let provider, signer, contract;
+
+    async function init() {
+      if (window.ethereum) {
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = provider.getSigner();
+        contract = new ethers.Contract(contractAddress, abi, signer);
+        document.getElementById("output").innerText = "✅ Connected to MetaMask";
+      } else {
+        alert("Please install MetaMask!");
+      }
+    }
+
+    init();
+
+    // Hash file
+    async function getFileHash(file) {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      return ethers.utils.keccak256(bytes);
+    }
+
+    // Upload to NFT.Storage
+    async function uploadToNFTStorage(file) {
+      const endpoint = "https://api.nft.storage/upload";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${NFT_STORAGE_KEY}`,
+          "Content-Type": "application/octet-stream"
+        },
+        body: file
+      });
+      const data = await response.json();
+      return data.value.cid; // ✅ NFT.Storage CID
+    }
+
+    // Upload to Lighthouse
+	
+	async function uploadLighthouse() {
+  const fileInput = document.getElementById("fileInput");
+  const file = fileInput.files[0];
+  const output = document.getElementById("output");
+  if (!file) {
+    alert("Please select a file first");
+    return;
+  }
+	
+  const filename = document.getElementById("filename").value || file.name;
+
+  try {
+    output.textContent = "⏳ Uploading to Lighthouse...";
+	console.log(file);
+	 console.log(filename);
+	console.log(filename.value);
+	console.log(file.name);
+	const file1 = "C:\Users\dell\Documents\iimk_bitcoin_prj\file_test_bitcoin.txt" ;
+    // Call SDK upload (simple form: file + API key)
+    //const result = await lighthouse.upload(file, LIGHTHOUSE_KEY);
+	
+	///new code
+	// Convert file → buffer
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = new Uint8Array(arrayBuffer);
+		
+		//const blob = new Blob([buffer], { type: "application/octet-stream" });
+//const file3 = new File([blob], "myfile.txt");
+
+        // Upload with filename preserved
+        //const result = await lighthouse.uploadBuffer(buffer, LIGHTHOUSE_KEY, file.name);
+		//const result = await lighthouse.uploadBuffer(buffer, LIGHTHOUSE_KEY, 1);
+		const result = await lighthouse.uploadBuffer(file, LIGHTHOUSE_KEY, 1);
+
+        console.log("Upload result:", result);
+
+        document.getElementById("output").innerText =
+          `✅ File uploaded to Lighthouse
+           CID: ${result.data.Hash}
+           Filename: ${result.data.Name}
+           Size: ${result.data.Size} bytes
+           Gateway Link: https://ipfs.io/ipfs/${result.data.Hash}`;
+
+    console.log("Lighthouse response:", result);
+//////new code
+    // Grab the CID (varies slightly by SDK version)
+    const cid = result?.data?.Hash ?? result?.Hash ?? result?.cid;
+    if (!cid) {
+      output.textContent = "❌ Upload success, but no CID returned.";
+      console.log("Full response:", result);
+      return;
+    }
+
+    // Hash the file (for registerDocument)
+    const docHash = await getFileHash(file);
+
+    // Register on blockchain
+    const tx = await contract.registerDocument(docHash, cid, filename);
+    await tx.wait();
+
+    output.textContent = `✅ Document registered\nHash: ${docHash}\nCID: ${cid}\nTx: ${tx.hash}`;
+  } catch (err) {
+    console.error("Upload/Register error:", err);
+    output.textContent = "❌ Error: " + (err.message || err);
+  }
+}
+
+	
+     async function uploadToIPFS2(file) {
+      //const endpoint = "https://api.web3.storage/upload";
+	  //const endpoint = "https://app.nft.storage/upload";
+	    const endpoint = "https://api.nft.storage/upload";
+		console.log(" Using API Key:", NFT_STORAGE_KEY);
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${NFT_STORAGE_KEY}`,
+		  "Content-Type": "application/octet-stream"
+        },
+        body: file
+      }); 
+	  //return response.json();
+	  
+	const data = await response.json();
+	return JSON.stringify(data, null, 2);
+	
+	document.getElementById("output").innerText =
+      "Full Response:\n" + JSON.stringify(data, null, 2);
+	
+	//return data.value;
+   //   if (!response.ok) {
+     //   throw new Error("Failed to upload to IPFS ");
+      //}
+
+      //const data = await response.json();
+      //return data.cid; // ✅ IPFS CID
+		//return data.value.cid // ✅ IPFS CID nft
+	}
+	
+	async function uploadToIPFS(file) {
+      //const endpoint = "https://api.web3.storage/upload";
+	  //const endpoint = "https://app.nft.storage/upload";
+	   // const endpoint = "https://api.nft.storage/upload";
+//console.log(" Using API Key:", NFT_STORAGE_KEY);
+
+      //const response = await fetch(endpoint, {
+      //  method: "POST",
+      //  headers: {
+      //    "Authorization": `Bearer ${NFT_STORAGE_KEY}`,
+		//  "Content-Type": "application/octet-stream"
+      //  },
+        //body: file
+     // }); 
+	  //return response.json();
+	  
+	//const data = await response.json();
+	//return JSON.stringify(data, null, 2);
+	
+	//document.getElementById("output").innerText =
+     // "Full Response:\n" + JSON.stringify(data, null, 2);
+	
+	//return data.value;
+   //   if (!response.ok) {
+     //   throw new Error("Failed to upload to IPFS ");
+      //}
+
+      //const data = await response.json();
+      //return data.cid; // ✅ IPFS CID
+		//return data.value.cid // ✅ IPFS CID nft
+		// Hash the file (for registerDocument)
+    try {
+	const docHash = await getFileHash(file);
+	const cid = docHash+'1234';
+
+    // Register on blockchain
+    const tx = await contract.registerDocument(docHash, cid, filename);
+    await tx.wait();
+
+//outputEl
+    output.textContent = `✅ Document registered\nHash: ${docHash}\nCID: ${cid}\nTx: ${tx.hash}`;
+	return cid;
+  } catch (err) {
+    console.error("Upload/Register error:", err);
+    output.textContent = "❌ Error: " + (err.message || err);
+  }
+	}
+	
+	
+	
+
+    // Register doc with NFT.Storage
+    async function registerDoc() {
+      const fileInput = document.getElementById("fileInput");
+      const file = fileInput.files[0];
+      const filename = document.getElementById("filename").value || (file ? file.name : "");
+
+      if (!file) {
+        alert("Please select a file");
+        return;
+      }
+
+      try {
+        const docHash = await getFileHash(file);
+		//const ipfsCid  = docHash+'1234';
+		const ipfsCid = await uploadToIPFS(file);
+        //const ipfsCid = await uploadToNFTStorage(file);
+
+        document.getElementById("output").innerText = `✅ Document registered:
+        Hash: ${docHash}
+        CID: ${ipfsCid}
+        Filename: ${filename}`;
+      } catch (err) {
+        document.getElementById("output").innerText = "❌ Error: " + err.message;
+      }
+    }
+
+    // Check doc
+    async function checkDoc() {
+	
+	//Document registered new :
+      //  Hash: 0xfb9d144f0f8607f77aa9265185d80f7e9ae2299bbcdf391df74e95850cdeb9bf
+       // CID: 0xfb9d144f0f8607f77aa9265185d80f7e9ae2299bbcdf391df74e95850cdeb9bf1234
+        //Filename: rt
+		
+		//Document registered:
+       // Hash: 0x5b59588f025d67ce26ebd038985803866282eaa50c54f7c3c5723433d1746198
+       // CID: 0x5b59588f025d67ce26ebd038985803866282eaa50c54f7c3c5723433d17461981234
+       // Filename: file_test1
+	  const docHash = document.getElementById("hashInput").value.trim();
+	  //docHash1 = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(docHash));
+	  //const docHash = '0xfb9d144f0f8607f77aa9265185d80f7e9ae2299bbcdf391df74e95850cdeb9bf';
+	  console.log(docHash);
+      try {
+        const registered = await contract.isRegistered(docHash);
+        if (!registered) {
+          document.getElementById("output").innerText = "❌ Document not found";
+		  console.log(registered);
+          return;
+        }
+		console.log(registered);
+        const doc = await contract.getDocument(docHash);
+        document.getElementById("output").innerText =
+          `✅ Registered
+           Uploader: ${doc[0]}
+           Timestamp: ${new Date(doc[1] * 1000)}
+           IPFS: https://ipfs.io/ipfs/${doc[2]}
+           Filename: ${doc[3]}`;
+      } catch (err) {
+        document.getElementById("output").innerText = "❌ Error: " + err.message;
+      }
+    }
+	
+	async function downloadFile() {
+      const cid = document.getElementById("cidInput").value.trim();
+      if (!cid) {
+        alert("Enter a CID first!");
+        return;
+      }
+
+      // Gateway URL
+      const url = `https://gateway.lighthouse.storage/ipfs/${cid}`;
+      
+      // Fetch the file
+      const response = await fetch(url);
+      if (!response.ok) {
+        alert("Download failed: " + response.statusText);
+        return;
+      }
+
+      // Convert response to blob
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = cid; // default filename = CID
+      link.click();
+    }
+
+//https://gateway.lighthouse.storage/ipfs/bafkreifmoajyj3mqb7gqlmxtqv3vavqqej624scsuveyaczuw7qcf7ko4es
+
+
+	async function fetchAndConvert() {
+    const url = document.getElementById("ipfsUrl").value.trim();
+	console.log(url);
+    if (!url) {
+        alert("Please enter a valid IPFS URL");
+        return;
+    }
+
+    try {
+        // Fetch the file as an ArrayBuffer
+        const response = await fetch(url);
+        const buffer = await response.arrayBuffer();
+
+        // Convert ArrayBuffer to Uint8Array
+        const uint8Array = new Uint8Array(buffer);
+
+        // Convert numeric array to string
+        const text = String.fromCharCode(...uint8Array);
+
+        // Display in the <pre> element
+        document.getElementById("output").innerText = text;
+    } catch (err) {
+        document.getElementById("output").innerText = "❌ Error: " + err.message;
+    }
+	}
+
+
+    // ✅ Make functions available globally
+    window.registerDoc = registerDoc;
+    window.uploadLighthouse = uploadLighthouse;
+    window.checkDoc = checkDoc;
+  </script>
+  
+  <script>
+window.fetchAndConvert = async function() {
+    const url = document.getElementById("ipfsUrl").value.trim();
+    if (!url) { alert("Please enter a valid IPFS URL"); return; }
+
+    try {
+        const response = await fetch(url);
+        const buffer = await response.arrayBuffer();
+        const uint8Array = new Uint8Array(buffer);
+		
+        //const text = String.fromCharCode(...uint8Array);
+		// Proper UTF-8 decoding
+        const decoder = new TextDecoder("utf-8");
+        const text = decoder.decode(uint8Array);
+		
+        document.getElementById("output").innerText = text;
+    } catch (err) {
+        document.getElementById("output").innerText = "❌ Error: " + err.message;
+    }
+}
+</script>
+
+<script>
+async function fetchAndDownload() {
+    const url = document.getElementById("ipfsUrl").value.trim();
+    if (!url) return alert("Enter IPFS URL");
+
+    try {
+        const response = await fetch(url);
+        const blob = await response.blob();  // handle binary safely
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "file_from_ipfs"; // you can extract the name from CID if needed
+        a.click();
+        URL.revokeObjectURL(a.href);
+    } catch (err) {
+        console.error(err);
+        alert("Error fetching file: " + err.message);
+    }
+}
+</script>
+
+
+<script>
+
+async function fetchAndConvert1() {
+    const url = document.getElementById("ipfsUrl").value.trim();
+    if (!url) return alert("Enter IPFS URL");
+
+    try {
+        const response = await fetch(url);
+        const data = await response.arrayBuffer	(); // Lighthouse often returns JSON
+
+        // Suppose your numeric array is in data.array or data.value
+        const numericArray = data?.array || data?.value;
+        if (!numericArray) return alert("No numeric array found");
+
+        // Convert numbers to bytes
+        const uint8Array = new Uint8Array(numericArray);
+
+        // Create a Blob and download
+        const blob = new Blob([uint8Array]);
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "downloaded_file";
+        a.click();
+        URL.revokeObjectURL(a.href);
+    } catch (err) {console.error(err);//alert("Error fetching/converting file: " + err.message);
+    }
+}
+
+//C:\Users\dell\Documents\iimk_bitcoin_prj
+//npx http-server --cors
+
+
+
+</script>
+
+</body>
+</html>

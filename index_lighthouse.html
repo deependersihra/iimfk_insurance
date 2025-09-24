@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DocRegistry DApp with IPFS + Lighthouse</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <!-- Lighthouse SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@lighthouse-web3/sdk@0.4.1/dist/lighthouse.min.js"></script>
+
+    <!-- <script src="https://cdn.jsdelivr.net/npm/@lighthouse-web3/sdk/dist/lighthouse.min.js"></script> -->
+</head>
+<body>
+  <h2>📄 Document Registry</h2>
+
+  <input type="file" id="fileInput" />
+  <input type="text" id="filename" placeholder="Enter filename" />
+  <button onclick="registerDoc()">Register Document</button>
+  <button onclick="registerDocLighthouse()">Register via Lighthouse</button>
+
+  <br><br>
+
+  <input type="text" id="hashInput" placeholder="Enter docHash to check" />
+  <button onclick="checkDoc()">Check Document</button>
+
+  <pre id="output"></pre>
+
+  <script>
+    // ✅ Replace this with your deployed contract address
+    const contractAddress = "0x1766209d8c33204260ea42951f079f60a193bcf8"; 
+    
+    // ✅ Contract ABI
+    const abi = [	
+	  //"function registerDocument(bytes32 docHash, string calldata ipfsCid, string calldata filename) external",
+      "function getDocument(bytes32 docHash) external view returns (address, uint256, string memory, string memory)",
+      "function isRegistered(bytes32 docHash) external view returns (bool)"
+    ];
+	
+	
+
+    // ✅ API keys
+    const NFT_STORAGE_KEY ="e09f5630.9922437dcfa04586b53a7591478116da"   // nft.storage
+    const LIGHTHOUSE_KEY  = "b2e9e529.525f4cfdd5b74035a5769ee1808907b6";    // lighthouse.storage
+
+    let provider, signer, contract;
+
+    async function init() {
+      if (window.ethereum) {
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = provider.getSigner();
+        contract = new ethers.Contract(contractAddress, abi, signer);
+        document.getElementById("output").innerText = "✅ Connected to MetaMask";
+      } else {
+        alert("Please install MetaMask!");
+      }
+    }
+    init();
+
+    // Convert file to keccak256 hash
+    async function getFileHash(file) {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      return ethers.utils.keccak256(bytes);
+    }
+
+    // Upload file to IPFS via nft.storage
+    async function uploadToNFTStorage(file) {
+      const endpoint = "https://api.nft.storage/upload";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${NFT_STORAGE_KEY}`,
+          "Content-Type": "application/octet-stream"
+        },
+        body: file
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || "NFT.Storage upload failed");
+      return data.value.cid; // ✅ returns IPFS CID
+    }
+
+    // Upload file to Lighthouse
+    async function uploadToLighthouse(file) {
+      // Lighthouse expects a File object in browser
+      const result = await lighthouse.upload(file, LIGHTHOUSE_KEY);
+      return result.data.Hash; // ✅ returns IPFS CID
+    }
+
+    // Register doc using nft.storage
+    async function registerDoc() {
+      const file = document.getElementById("fileInput").files[0];
+      const filename = document.getElementById("filename").value || (file ? file.name : "");
+      if (!file) return alert("Please select a file");
+
+      try {
+        const docHash = await getFileHash(file);
+        //const ipfsCid = await uploadToNFTStorage(file);
+
+        document.getElementById("output").innerText = `✅ Document registered:
+        Hash: ${docHash}
+        //CID: ${ipfsCid}
+        Filename: ${filename}`;
+      } catch (err) {
+        document.getElementById("output").innerText = "❌ Error (NFT.Storage): " + err.message;
+      }
+    }
+
+    // Register doc using Lighthouse
+    async function registerDocLighthouse() {
+      const file = document.getElementById("fileInput").files[0];
+      const filename = document.getElementById("filename").value || (file ? file.name : "");
+      if (!file) return alert("Please select a file");
+
+      try {
+        const docHash = await getFileHash(file);
+        const ipfsCid = await uploadToLighthouse(file);
+
+        document.getElementById("output").innerText = `✅ Document registered (Lighthouse):
+        Hash: ${docHash}
+        CID: ${ipfsCid}
+        Filename: ${filename}`;
+      } catch (err) {
+        document.getElementById("output").innerText = "❌ Error (Lighthouse): " + err.message;
+      }
+    }
+
+    // Check document on chain
+    async function checkDoc() {
+      const docHash = document.getElementById("hashInput").value;
+      try {
+        const registered = await contract.isRegistered(docHash);
+        if (!registered) {
+          document.getElementById("output").innerText = "❌ Document not found";
+          return;
+        }
+        const doc = await contract.getDocument(docHash);
+        document.getElementById("output").innerText =
+          `✅ Registered
+           Uploader: ${doc[0]}
+           Timestamp: ${new Date(doc[1] * 1000)}
+           IPFS: https://ipfs.io/ipfs/${doc[2]}
+           Filename: ${doc[3]}`;
+      } catch (err) {
+        document.getElementById("output").innerText = "❌ Error: " + err.message;
+      }
+    }
+  </script>
+</body>
+</html>
